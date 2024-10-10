@@ -31,7 +31,7 @@ namespace SnowballSpin.Objects
             _texture = Scene.Content.Load<Texture2D>("Gfx/tileset");
 
             //remove newlines from map file
-            string map = Properties.Resources.SingleMap.Replace("\r\n", "");
+            string map = Properties.Resources.SingleMap.Replace(Environment.NewLine, "");
 
             //fill _map array
             for (int y = 0; y < MAP_HEIGHT; y++)

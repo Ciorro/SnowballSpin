@@ -9,14 +9,18 @@ using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 using SnowballSpin.Controllers;
+using SnowballSpin.Network;
 using SnowballSpin.Physics;
 using System;
+using System.Linq;
 
 namespace SnowballSpin.Objects
 {
     class Player : Sprite
     {
         public const int RADIUS = 64;
+
+        public string Id { get; private set; } // Unique identifier for the player
 
         public bool IsPlayerControlled { get; private set; }
         public IPlayerController Controller { get; set; }
@@ -31,7 +35,7 @@ namespace SnowballSpin.Objects
         private SoundEffect _shootSfx;
         private SoundEffect _hitSfx;
 
-        public Player(Level level, bool isControllable = false)
+        public Player(Level level, bool isControllable = false, string id = "")
         {
             _level = level;
             IsPlayerControlled = isControllable;
@@ -39,7 +43,15 @@ namespace SnowballSpin.Objects
             Body = new Body();
             Origin = new Vector2(0.5f);
 
-            Children.Add(new CameraController(this));
+            if (IsPlayerControlled)
+            {
+                Id = NetworkClient.Connect();
+                Children.Add(new CameraController(this));
+            }
+            else
+            {
+                Id = id;
+            }
 
             Random _colorRnd = new Random();
 
@@ -82,19 +94,25 @@ namespace SnowballSpin.Objects
 
             if (!IsDead)
             {
-                if (IsPlayerControlled || IsAIControlled)
+                // if (IsPlayerControlled || IsAIControlled)
                 {
                     Position = Body.Position;
                 }
 
                 if (Controller != null)
                 {
+                    // Console.WriteLine($"e {IsPlayerControlled}");
                     Controller.ControlPlayer(this);
                 }
 
-                if (!_level.IsLand(Position) && (IsPlayerControlled || IsAIControlled))
+                if (!float.IsNaN(Position.X) && Position != default && !_level.IsLand(Position) )//&& (IsPlayerControlled || IsAIControlled))
                 {
+                    Console.WriteLine($"pos {Position.X} {Position.Y}");
                     IsDead = true;
+                    if (IsPlayerControlled)
+                    {
+                        NetworkClient.ReportGameLeft();
+                    }
                     RemoveAllActions();
 
                     AddAction(new ActionSequence(
@@ -107,6 +125,19 @@ namespace SnowballSpin.Objects
                     ));
 
                     _splashSfx.Play();
+                }
+
+                if (IsPlayerControlled)
+                {
+                    var snowballs = Scene.FindObject("snowballs").Children.Where(x => x is Snowball s && s.Sender.Id == Id).Cast<Snowball>();
+                    NetworkClient.ReportPlayerData(
+                        new PlayerData() {
+                            PlayerId = Id,
+                            PositionX = Body.Position.X,
+                            PositionY = Body.Position.Y,
+                            Rotation = Rotation
+                        }
+                    );
                 }
             }
         }
@@ -135,7 +166,7 @@ namespace SnowballSpin.Objects
             RemoveAllActions();
 
             Body.Velocity += HMGMath.VectorFromRotation(Rotation + 180) * 300;
-            bool dummy = !(IsPlayerControlled || IsAIControlled);
+            bool dummy = false;//!(IsPlayerControlled || IsAIControlled);
 
             Snowball snowball = new Snowball(this, dummy);
             snowball.Position = position;
@@ -156,6 +187,17 @@ namespace SnowballSpin.Objects
 
             Scene.FindObject("snowballs").Children.Add(snowball);
             _shootSfx.Play(0.1f, 0, 0);
+
+            if (IsPlayerControlled)
+            {
+                NetworkClient.ReportSnowballData(
+                    new SnowballData()
+                    {
+                        PlayerId = Id,
+                        Rotation = rotation
+                    }
+                );
+            }
         }
 
         public void RotateLeft()
@@ -185,7 +227,6 @@ namespace SnowballSpin.Objects
                         Body.Velocity += (mLoc - Body.Position) * 5;
                     else if (mbev.Button == MouseButton.Left)
                         Body.Velocity += (mLoc - Body.Position) * 5;
-
                 }
             }
         }
